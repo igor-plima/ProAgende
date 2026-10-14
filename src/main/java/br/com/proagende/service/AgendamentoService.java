@@ -8,6 +8,7 @@ import br.com.proagende.model.StatusAgendamento;
 import br.com.proagende.repository.AgendamentoRepository;
 import br.com.proagende.repository.ClienteRepository;
 import br.com.proagende.repository.ServicoRepository;
+import br.com.proagende.util.CalculoAgenda;
 import br.com.proagende.util.DataHoraUtil;
 
 import java.time.LocalDateTime;
@@ -131,7 +132,7 @@ public class AgendamentoService {
 
     /** Lança exceção se o intervalo [inicio, inicio + duração] se sobrepõe a outro agendamento ativo do profissional. */
     private void verificarConflito(Servico servico, LocalDateTime inicio, int idIgnorado) {
-        LocalDateTime fim = inicio.plusMinutes(duracaoEfetiva(servico));
+        LocalDateTime fim = CalculoAgenda.calcularTermino(inicio, duracaoDe(servico));
         Map<Integer, Servico> cacheServicos = new HashMap<>();
 
         for (Agendamento existente : agendamentoRepository.listarPorProfissional(servico.getIdProfissional())) {
@@ -141,17 +142,17 @@ public class AgendamentoService {
             Servico servicoExistente = cacheServicos.computeIfAbsent(existente.getIdServico(),
                     id -> servicoRepository.buscarPorId(id).orElse(null));
             LocalDateTime inicioExistente = existente.getDataHora();
-            LocalDateTime fimExistente = inicioExistente.plusMinutes(duracaoEfetiva(servicoExistente));
+            LocalDateTime fimExistente = CalculoAgenda.calcularTermino(inicioExistente, duracaoDe(servicoExistente));
 
-            if (inicio.isBefore(fimExistente) && inicioExistente.isBefore(fim)) {
+            if (CalculoAgenda.haSobreposicao(inicio, fim, inicioExistente, fimExistente)) {
                 throw new RegraNegocioException("Conflito de horário: o profissional já possui o agendamento "
                         + existente.getIdAgendamento() + " em " + DataHoraUtil.formatar(inicioExistente) + ".");
             }
         }
     }
 
-    /** Serviço sem duração cadastrada ocupa ao menos 1 minuto, para que dois no mesmo instante conflitem. */
-    private int duracaoEfetiva(Servico servico) {
-        return (servico == null || servico.getDuracaoMinutos() <= 0) ? 1 : servico.getDuracaoMinutos();
+    /** Duração cadastrada do serviço (0 quando o serviço não existe mais); a regra do mínimo fica em CalculoAgenda. */
+    private int duracaoDe(Servico servico) {
+        return servico == null ? 0 : servico.getDuracaoMinutos();
     }
 }
